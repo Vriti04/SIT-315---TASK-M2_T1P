@@ -1,61 +1,71 @@
 #include <chrono>
 #include <cstdlib>
-#include <ctime>
 #include <iostream>
-#include <omp.h>
+#include <pthread.h> // Include pthread header
+#include <time.h>
 
-using namespace std;
 using namespace std::chrono;
+using namespace std;
 
-const int N = 100; // matrix size
+struct ThreadData {
+    int* v1;
+    int* v2;
+    int* v3;
+    int start;
+    int end;
+};
 
-void initialize_matrix(int matrix[N][N])
-{
-    // initialize matrix with random values
-    srand(time(NULL));
-    for (int i = 0; i < N; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            matrix[i][j] = rand() % 10;
-        }
+void randomVector(int vector[], int size) {
+    for (int i = 0; i < size; i++) {
+        vector[i] = rand() % 100;
     }
 }
 
-void multiply_matrices(int A[N][N], int B[N][N], int C[N][N])
-{
-// perform matrix multiplication in parallel using OpenMP
-#pragma omp parallel for
-    for (int i = 0; i < N; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            C[i][j] = 0;
-            for (int k = 0; k < N; k++)
-            {
-                C[i][j] += A[i][k] * B[k][j];
-            }
-        }
+void* vectorAdditionThread(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    for (int i = data->start; i < data->end; i++) {
+        data->v3[i] = data->v1[i] + data->v2[i];
     }
+    return nullptr;
 }
 
-int main()
-{
-    int A[N][N], B[N][N], C[N][N];
+int main() {
+    unsigned long size = 100000000;
+    srand(time(0));
+    int* v1 = (int*)malloc(size * sizeof(int));
+    int* v2 = (int*)malloc(size * sizeof(int));
+    int* v3 = (int*)malloc(size * sizeof(int));
+    randomVector(v1, size);
+    randomVector(v2, size);
 
-    // initialize matrices A and B with random values
-    initialize_matrix(A);
-    initialize_matrix(B);
+    int num_threads = 4; // Change this to set the number of threads
 
-    // calculate execution time
-    auto start_time = high_resolution_clock::now();
-    // perform matrix multiplication
-    multiply_matrices(A, B, C);
-    auto stop_time = high_resolution_clock::now();
-    auto duration = duration_cast<nanoseconds>(stop_time - start_time);
+    auto start = high_resolution_clock::now();
 
-    // print execution time
-    cout << "Execution time: " << duration.count() << " nanoseconds\n";
+    pthread_t threads[num_threads];
+    ThreadData thread_data[num_threads];
+    int chunk_size = size / num_threads;
+
+    for (int i = 0; i < num_threads; i++) {
+        thread_data[i].v1 = v1;
+        thread_data[i].v2 = v2;
+        thread_data[i].v3 = v3;
+        thread_data[i].start = i * chunk_size;
+        thread_data[i].end = (i == num_threads - 1) ? size : (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, vectorAdditionThread, &thread_data[i]);
+    }
+
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], nullptr);
+    }
+
+    auto stop = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(stop - start);
+    cout << "Time taken by function :" << duration.count() << " microseconds" << endl;
+
+    free(v1);
+    free(v2);
+    free(v3);
 
     return 0;
 }
